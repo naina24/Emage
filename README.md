@@ -9,10 +9,25 @@
 
 ### npm init
 
-### install all the depencies by looking in Index.js file
+### install all the depencies by looking in Index.js files
 
 ### for running client i.e market 
 ### do npm i 
-### run the project in devlopment mode by running command npm start now 😊
+
 
 #### There was something Issue with our previous private repo So, this project is on this repo now.
+
+
+make Account on https://console.cloud.google.com/home
+get OAUTH_CLIENTID,OAUTH_CLIENT_SECRET,OAUTH_REFRESH_TOKEN.
+
+# make .env in server files
+
+EMAIL=youremail@gmail.com
+WORD=youremailpassword
+OAUTH_CLIENTID=
+OAUTH_CLIENT_SECRET=
+OAUTH_REFRESH_TOKEN=
+
+### run the server using Nodemon devstart 😊
+### run the project in devlopment mode by running command npm start now 😊

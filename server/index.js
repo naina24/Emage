@@ -3,9 +3,11 @@ const path = require("path");
 const app = express();
 const mysql = require("mysql");
 const cors = require("cors");
+const nodemailer = require("nodemailer");
 const fileUpload = require("express-fileupload");
 const morgan = require("morgan");
-var nodemailer = require('nodemailer');
+const { encrypt, decrypt } = require("./encrypt");
+require("dotenv").config();
 
 app.use(
   fileUpload({
@@ -22,7 +24,7 @@ const db = mysql.createConnection({
   user: "root",
   host: "localhost",
   password: "Shruti@2002",
-  database: "student_managment",
+  database: "photographer",
 });
 
 //User Registration
@@ -30,10 +32,11 @@ app.post("/addUser", (req, res) => {
   const name = req.body.name;
   const email = req.body.email;
   const password = req.body.password;
+  const hashedPassword = encrypt(password);
 
   db.query(
-    "INSERT INTO user(name, email, password) VALUES (?,?,?)",
-    [name, email, password],
+    "INSERT INTO users(name, email, password, iv) VALUES (?,?,?,?)",
+    [name, email, hashedPassword.password, hashedPassword.iv],
     (err, result) => {
       if (err) {
         console.log(err);
@@ -52,7 +55,7 @@ app.put("/updateUser", (req, res) => {
   const password = req.body.password;
 
   const sqlUpdate =
-    "UPDATE user SET name = ?, email = ?, password = ? WHERE iduser = ?";
+    "UPDATE users SET name = ?, email = ?, password = ? WHERE iduser = ?";
 
   db.query(sqlUpdate, [name, email, password, UId], (err, result) => {
     if (err) {
@@ -63,7 +66,7 @@ app.put("/updateUser", (req, res) => {
 
 // get user details
 app.get("/getUsers", (req, res) => {
-  db.query("SELECT * FROM user", (err, result) => {
+  db.query("SELECT * FROM users", (err, result) => {
     if (err) {
       console.log(err);
     } else {
@@ -72,11 +75,11 @@ app.get("/getUsers", (req, res) => {
   });
 });
 
-// delete users
+// delete userss
 app.delete("/deleteUsers/:Uid", (req, res) => {
   const UId = parseInt(req.params.Uid);
 
-  const sqlDelete = "DELETE FROM user WHERE iduser = ?";
+  const sqlDelete = "DELETE FROM users WHERE iduser = ?";
 
   db.query(sqlDelete, UId, (err, result) => {
     if (err) {
@@ -85,26 +88,48 @@ app.delete("/deleteUsers/:Uid", (req, res) => {
   });
 });
 
+app.post("/decryptpassword", (req, res) => {
+  res.send(decrypt(req.body));
+});
 // user authentication for login
 app.post("/login", (req, res) => {
   const userNameReg = req.body.userNameReg;
   const userPasswordReg = req.body.userPasswordReg;
-
+  const hashedPassword = encrypt(userPasswordReg);
   db.query(
-    "SELECT * FROM user WHERE email = ? AND password = ?",
-    [userNameReg, userPasswordReg],
+    "SELECT * FROM users WHERE email = ? ",
+    [userNameReg],
     (err, result) => {
       if (err) {
         res.send({ error: err });
       }
       if (result.length > 0) {
+        const p={
+          iv: result[0].iv,
+          password: result[0].password,
+        }
+        const k=decrypt(p);
+        if(k==userPasswordReg){
         res.send(result);
+      }else{
+        console.log("Password incorrect");}
       } else {
         res.send({ message: "wrong username and passowrd" });
       }
     }
   );
 });
+
+// app.post("/setuserid", (req, res) => {
+
+//   const sqlDelete = " SELECT get_id() ";
+
+//   db.query(sqlDelete, UId, (err, result) => {
+//     if (err) {
+//       console.log(err);
+//     }
+//   });
+// });
 
 //upload images
 app.post("/picture", async (req, res) => {
@@ -117,7 +142,7 @@ app.post("/picture", async (req, res) => {
     } else {
       const { picture } = req.files;
 
-      picture.mv("../market/public/uploads/" + picture.name);
+      picture.mv("../client/public/uploads/" + picture.name);
       res.send({
         status: true,
         message: "uploaded",
@@ -130,12 +155,11 @@ app.post("/picture", async (req, res) => {
 
 // send entered product details to the database
 app.post("/addProducts", (req, res) => {
-  const prPrice = req.body.prPrice;
   const prImage = req.body.prImage;
   const iduser= req.body.iduser;
   db.query(
-    "INSERT INTO products( price, prImage, iduser) VALUES (?,?,?)",
-    [prPrice, prImage, iduser],
+    "INSERT INTO products(prImage, iduser) VALUES (?,?)",
+    [prImage, iduser],
     (err, result) => {
       if (err) {
         console.log(err);
@@ -167,7 +191,18 @@ app.put("/updateProducts", (req, res) => {
 });
 
 // get products
-app.get("/getProducts", (req, res) => {
+app.get("/getProducts/:id", (req, res) => {
+  const Id = parseInt(req.params.id);
+  db.query(`SELECT * FROM products WHERE iduser = ${Id}`, (err, result) => {
+    if (err) {
+      console.log(err);
+    } else {
+      res.send(result);
+    }
+  });
+});
+
+app.get("/getProduct", (req, res) => {
   db.query("SELECT * FROM products", (err, result) => {
     if (err) {
       console.log(err);
@@ -198,11 +233,12 @@ app.post("/addToCart", (req, res) => {
   const userid = req.body.userid;
   const total = req.body.total;
   const qty = req.body.PrQty;
-  //const prImage = req.body.prImage;
+  const size = req.body.size;
+  const prImage = req.body.prImage;
 
   db.query(
-    "INSERT INTO cart_items( price, qty, iduser, total, idproduct) VALUES (?,?,?,?,?)",
-    [ prPrice, qty, userid, total, prid],
+    "INSERT INTO cart_items( price, qty, iduser, total, idproduct, size) VALUES (?,?,?,?,?,?)",
+    [ prPrice, qty, userid, total, prid, size],
     (err, result) => {
       if (err) {
         console.log(err);
@@ -293,6 +329,62 @@ app.get("/getbillno/:id", (req, res) => {
     }
   );
 });
+//get price_chart
+app.get("/getPricechart", (req, res) => {
+  db.query("SELECT * FROM price_chart", (err, result) => {
+    if (err) {
+      console.log(err);
+    } else {
+      res.send(result);
+    }
+  });
+});
+
+//delete a size from price_chart
+app.delete("/deletesize/:idsize", (req, res) => {
+  const idsize = parseInt(req.params.idsize);
+
+  const sqlDelete = "DELETE FROM price_chart WHERE idsize = ?";
+
+  db.query(sqlDelete, idsize, (err, result) => {
+    if (err) {
+      console.log(err);
+    }
+  });
+});
+//Add a new Size
+app.post("/addSize", (req, res) => {
+  const size = req.body.size;
+  const Price = req.body.Price;
+
+  db.query(
+    "INSERT INTO price_chart(size, Price) VALUES (?,?)",
+    [ size, Price],
+    (err, result) => {
+      if (err) {
+        console.log(err);
+      } else {
+        res.send("successfully added");
+      }
+    }
+  );
+});
+
+// update Size
+app.put("/updateSize", (req, res) => {
+  const idsize = req.body.idsize;
+  const size = req.body.size;
+  const Price = req.body.Price;
+
+  const sqlUpdate =
+    "UPDATE size_chart SET size = ?, Price = ? WHERE idsize = ?";
+
+  db.query(sqlUpdate, [size, Price, idsize], (err, result) => {
+    if (err) {
+      console.log(err);
+    }
+  });
+});
 
 // send order details
 app.post("/sendOrderDetails", (req, res) => {
@@ -305,9 +397,10 @@ app.post("/sendOrderDetails", (req, res) => {
   const paymode = req.body.paymode;
   const total = req.body.total;
   const userid = req.body.userid;
+  const size = req.body.PrSize;
 
   db.query(
-    "INSERT INTO orders(date, bill_id, iduser, bill_amount, paymode, pr_name, pr_price, pr_qty, pr_total) VALUES (?,?,?,?,?,?,?,?,?)",
+    "INSERT INTO orders(date, bill_id, iduser, bill_amount, paymode, pr_name, pr_price, pr_qty, pr_total, size) VALUES (?,?,?,?,?,?,?,?,?,?)",
     [
       date,
       bill_id,
@@ -318,6 +411,7 @@ app.post("/sendOrderDetails", (req, res) => {
       product_price,
       product_qty,
       product_total,
+      size,
     ],
     (err, result) => {
       if (err) {
@@ -391,9 +485,10 @@ app.put("/updateStatus", (req, res) => {
   const id = req.body.billId;
   const status = req.body.status;
 
-  const sqlUpdate = "UPDATE billing_details SET status = ? WHERE billNo = ?";
+  const sqlUpdate = "UPDATE billing_details SET status = ? WHERE bill_id = ?";
 
   db.query(sqlUpdate, [status, id], (err, result) => {
+    console.log(id);
     if (err) {
       console.log(err);
     }
@@ -411,32 +506,53 @@ app.get("/getbilledItems", (req, res) => {
   });
 });
 
-app.listen(3001, () => {
-  console.log("server is running");
-});
+
 
 
 //Emailer
-var transporter = nodemailer.createTransport({
-  service: 'gmail',
+
+
+let transporter = nodemailer.createTransport({
+  host: "smtp.gmail.com",
+  service: "gmail",
   auth: {
-    user: 'youremail@gmail.com',
-    pass: 'yourpassword'
-  }
-});
+    type: "OAuth2",
+    user: process.env.EMAIL,
+    pass: process.env.WORD,
+    clientId: process.env.OAUTH_CLIENTID,
+    clientSecret: process.env.OAUTH_CLIENT_SECRET,
+    refreshToken: process.env.OAUTH_REFRESH_TOKEN,
+  },
+ });
 
-var mailOptions = {
-  from: 'iit2019017@gmail.com',
-  to: 'myfriend@yahoo.com',
-  subject: 'Your Order ID is ',
-  text: 'That was easy!'
-};
+ transporter.verify((err, success) => {
+  err
+    ? console.log(err)
+    : console.log(`=== Server is ready to take messages: ${success} ===`);
+ });
+ app.post("/send", (req, res) => {
+  const email = req.body.email;
+  const subject = req.body.subject;
+  const text = req.body.text; 
+  console.log(text);
+  let mailOptions = {
+    from: process.env.EMAIL,
+    to: email,
+    subject: "Emaze order",
+    text: text,
+  };
+ 
+  transporter.sendMail(mailOptions, function (err, data) {
+    if (err) {
+      console.log("Error " + err);
+    } else {
+      console.log(email);
+      console.log("Email sent successfully");
+      res.json({ status: "Email sent" });
+    }
+  });
+ });
 
-transporter.sendMail(mailOptions, function(error, info){
-  if (error) {
-    console.log(error);
-  } else {
-    console.log('Email sent: ' + info.response);
-  }
-});
-
+app.listen(3001, () =>{ 
+  console.log("Server running");
+})
